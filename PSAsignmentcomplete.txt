@@ -1,0 +1,103 @@
+﻿## A script to get information about various parts of your computer
+
+#Display information about the system computer manufacturer, model, windows name, windows domain name, primary owner name, system type.
+
+Write-Host "
++-------------------+"
+Write-Host "| PC Identification |" 
+Write-Host "+-------------------+"
+Get-WmiObject -Class Win32_ComputerSystem | Select-Object -Property Manufacturer, Model, Caption, Domain, PrimaryOwnerName, SystemType
+
+#Display the BIOS manufacturer, name, version, and serial number.
+
+Write-Host "+---------------------+"
+Write-Host "| BIOS Identification |" 
+Write-Host "+---------------------+"
+Get-WmiObject -Class Win32_BIOS -ComputerName . | Select-Object -Property Manufacturer, Description, Version, SMBBIOSBIOSVersion | Format-List
+
+#Display the CPU manufacturer, name, number of cores, maximum clock speed.
+
+Write-Host "+--------------------------+"
+Write-Host "| Processor Identification |" 
+Write-Host "+--------------------------+"
+Get-WmiObject -Class win32_processor | select -Property  Manufacturer,Name,NumberOfCores,MaxClockSpeed | Format-List
+
+#Display the RAM manufacturer, capacity, and speed.
+
+Write-Host "+---------------------------------+"
+Write-Host "| Memory Identification and Usage |" 
+Write-Host "+---------------------------------+"
+$totalcapacity = 0
+Get-WmiObject -class win32_physicalmemory |
+foreach {
+                  new-object -TypeName psobject -Property @{
+                              Manufacturer = $_.manufacturer
+                              "Speed(MHz)" = $_.speed
+                              "Size(MB)" = $_.capacity/1mb
+                              Bank = $_.banklabel
+                              Slot = $_.devicelocator
+                  }
+                 $totalcapacity += $_.capacity/1mb
+} |
+ft -auto Manufacturer, "Size(MB)", "Speed(MHz)", Bank, Slot
+"Total RAM: ${totalcapacity}MB "
+$availablemem = Get-WmiObject win32_operatingsystem
+$availablemb = $availablemem.TotalVisibleMemorySize/1mb -as [int]
+"Usable Memory: ${availablemb}MB "
+$freemb = $availablemb.FreePhysicalMemory/1mb -as [int]
+"Free Memory: ${freemb}MB "
+
+#Display the Storage Usage info including Drives, Size, Free space %, and ProviderName
+
+Write-Host "
++----------------+"
+Write-Host "| Storage Usage  |" 
+Write-Host "+----------------+"
+Get-WmiObject -class win32_logicaldisk | Where-Object size -gt 0 | Format-Table -AutoSize DeviceID, @{n="Size(GB)"; e={$_.size/1gb -as [int]}}, @{n="Free(GB)"; e={$_.freespace/1gb -as [int]}}, @{n="% Free"; e={100*$_.freespace/$_.size -as [int]}}, ProviderName | Format-Table -AutoSize
+
+#Display the ethernet interfaces including name, MAC address, speed, IP address, netmask, default gateway, DNS domain, and Hostname
+
+
+Write-Host "+------------------------------------------+"
+Write-Host "| Network Identification and Configuration |" 
+Write-Host "+------------------------------------------+"
+Get-wmiobject win32_networkadapter| #start with all network adapters
+? adaptertype -match "ethernet"|#trim the collection to just ethernet adapters
+Foreach-object { #loop through all ethernet adapters running a script block on each one
+$nac = $_.getrelated("win32_networkadapterconfiguration") #get the related config object
+# make a new object from the original pair of related objects
+New-object PSObject -property @{Name=$_.name
+    ipaddress=$nac.ipaddress|where-object {($_-is [String]) -and ($_.indexof(".") -gt 0)}
+    ipgateway=$nac.defaultipgateway|where-object {($_ -is [string]) -and ($_.indexof(".") -gt 0)}
+    Domain=$nac.DNSDomain|where-object {($_ -is [string]) -and ($_.indexof(".") -gt 0)}
+    MACaddress=$nac.MACAddress|where-object {($_.indexof("."))}
+    NetMask=$nac.IPSubnet|where-object {($_ -is [string]) -and ($_.indexof(".") -gt 0)}
+    Hostname=$nac.DNSHostName|where-object {($_ -is [string]) -and ($_.indexof(".") -gt 0)}
+    Speed=$nac.Speed|where-object {($_.Speed/100000 -as [int]) -and ($_.indexof(".") -gt 0)}
+    }
+}| #end of script block to run on each adapter
+format-list name, MACAddress, Speed, ipaddress, NetMask, ipgateway,Domain, Hostname #format the object collection for display 
+
+#Display the graphics info inlcuding Name, VRAM, and Resolution
+
+Write-Host "
++---------------+"
+Write-Host "| Graphics Info |"
+Write-Host "+---------------+"
+$graphics = Get-WmiObject win32_videocontroller
+$name = $graphics.Name
+"Name :${Name}"
+$vram = $graphics.AdapterRAM/1gb
+"VRAM :${vram}GB"
+$horizontal = $graphics.CurrentHorizontalResolution
+$vertical = $graphics.CurrentVerticalResolution
+"Resolution :${horizontal} x ${vertical}"
+
+#Display the OS manufacturer, caption, version, OS architecture, registered user.
+
+Write-Host "
++-----------------------+"
+Write-Host "| Operating System Info |" 
+Write-Host "+-----------------------+"
+
+Get-WmiObject -Class Win32_OperatingSystem -ComputerName .| Select-Object -Property Manufacturer, Caption, Version, OSArchitecture, RegisteredUser | Format-List
